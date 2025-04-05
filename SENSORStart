@@ -1,0 +1,96 @@
+#ifdef ESP32
+  #include <WiFi.h>
+  #include <HTTPClient.h>
+#else
+  #include <ESP8266WiFi.h>
+  #include <ESP8266HTTPClient.h>
+#endif
+
+#include <SoftwareSerial.h>
+
+// Wi-Fi credentials
+const char* ssid = "YOUR_WIFI_NAME";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// ThingSpeak info
+const char* server = "http://api.thingspeak.com/update";
+const char* apiKey = "YOUR_THINGSPEAK_API_KEY";
+
+// PIR
+const int pirPin = 2;
+int motionDetected = 0;
+
+// Ultrasonic
+const int trigPin = 3;
+const int echoPin = 4;
+long duration;
+float ultrasonicDistance;
+
+// LiDAR (TFMini/TF-Luna)
+SoftwareSerial lidarSerial(10, 11); // RX, TX
+int lidarDistance = 0;
+
+void setup() {
+  Serial.begin(9600);
+  lidarSerial.begin(115200);
+
+  pinMode(pirPin, INPUT);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWi-Fi connected.");
+}
+
+void loop() {
+  // --- PIR ---
+  motionDetected = digitalRead(pirPin);
+
+  // --- Ultrasonic ---
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH);
+  ultrasonicDistance = duration * 0.034 / 2;
+
+  // --- LiDAR ---
+  if (lidarSerial.available() >= 9) {
+    if (lidarSerial.read() == 0x59 && lidarSerial.read() == 0x59) {
+      byte low = lidarSerial.read();
+      byte high = lidarSerial.read();
+      lidarDistance = (high << 8) + low;
+      for (int i = 0; i < 5; i++) lidarSerial.read(); // clear buffer
+    }
+  }
+
+  // --- Upload to ThingSpeak ---
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    String url = String(server) + "?api_key=" + apiKey +
+                 "&field1=" + String(motionDetected) +
+                 "&field2=" + String(ultrasonicDistance) +
+                 "&field3=" + String(lidarDistance);
+
+    http.begin(url);
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+      Serial.println("Data sent to ThingSpeak.");
+    } else {
+      Serial.print("HTTP Error: ");
+      Serial.println(httpCode);
+    }
+    http.end();
+  } else {
+    Serial.println("Wi-Fi not connected!");
+  }
+
+  delay(15000); // ThingSpeak free plan: 15s minimum delay
+}
