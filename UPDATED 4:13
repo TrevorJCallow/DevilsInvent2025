@@ -1,0 +1,175 @@
+
+FINAL CODE
+#include <Wire.h>
+#include "RTClib.h"
+#include <Servo.h>
+
+
+// === Servo Setup ===
+Servo myServo;
+const int servoPin = 10;
+const int moveDuration = 500; // ~duration to rotate 72° (TUNE THIS experimentally)
+
+
+// === LED Pins ===
+const int redLED = 42;
+const int greenLED = 43;
+
+
+// === Sensor Pins ===
+const int pirPin = 22;
+const int trigPin = 3;
+const int echoPin = 2;
+const int flamePin = 53;
+const int vibrationPin = 5;
+
+
+// === RTC ===
+RTC_DS3231 rtc;
+
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+
+
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC 😵");
+    while (true);
+  }
+
+
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, setting time...");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+
+
+  myServo.attach(servoPin);
+  myServo.write(90); // Stop
+
+
+  pinMode(redLED, OUTPUT);
+  pinMode(greenLED, OUTPUT);
+
+
+  pinMode(pirPin, INPUT);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(flamePin, INPUT);
+  pinMode(vibrationPin, INPUT);
+}
+
+
+void loop() {
+  // 5 steps forward (clockwise)
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(redLED, HIGH);
+    moveServo("forward", moveDuration);
+    digitalWrite(redLED, LOW);
+
+
+    digitalWrite(greenLED, HIGH);
+    delay(500);
+    digitalWrite(greenLED, LOW);
+
+
+    DateTime now = rtc.now();
+
+
+    switch (i) {
+      case 0: {
+        int motion = digitalRead(pirPin);
+        Serial.print("FORWARD PIR Reading: ");
+        Serial.print(motion == HIGH ? "Motion Detected" : "No Motion");
+        Serial.print(" at ");
+        printTimestamp(now);
+        break;
+      }
+      case 1: {
+        float distance = readUltrasonicCM();
+        Serial.print("FORWARD HC-SR04 Distance: ");
+        Serial.print(distance);
+        Serial.print(" cm at ");
+        printTimestamp(now);
+        break;
+      }
+      case 2: {
+        int flame = digitalRead(flamePin);
+        Serial.print("FORWARD RQ-S003 Flame Reading: ");
+        Serial.print(flame == LOW ? "🔥 Flame Detected" : "No Flame");
+        Serial.print(" at ");
+        printTimestamp(now);
+        break;
+      }
+      case 3: {
+        int vibration = digitalRead(vibrationPin);
+        Serial.print("FORWARD HW-201 Vibration Reading: ");
+        Serial.print(vibration == HIGH ? "Vibration Detected" : "No Vibration");
+        Serial.print(" at ");
+        printTimestamp(now);
+        break;
+      }
+      default:
+        break;
+    }
+
+
+    delay(500);  // Pause before next
+  }
+
+
+  // Move back to 0° position (reverse 5 × 72°)
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(redLED, HIGH);
+    moveServo("reverse", moveDuration);
+    digitalWrite(redLED, LOW);
+    delay(500);
+  }
+
+
+  delay(2000); // Pause before repeating
+}
+
+
+// === Moves servo for specified time in direction
+void moveServo(String direction, int duration) {
+  if (direction == "forward") {
+    myServo.write(100); // CW (adjust if too fast)
+  } else if (direction == "reverse") {
+    myServo.write(80);  // CCW (adjust if too fast)
+  }
+  delay(duration);
+  myServo.write(90); // Stop
+}
+
+
+// === Ultrasonic Distance Function
+float readUltrasonicCM() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+
+  long duration = pulseIn(echoPin, HIGH, 30000);
+  float distance = duration * 0.0343 / 2;
+
+
+  if (duration == 0) return -1;
+  return distance;
+}
+
+
+// === Timestamp Printer
+void printTimestamp(DateTime now) {
+  Serial.print(now.year()); Serial.print('/');
+  Serial.print(now.month()); Serial.print('/');
+  Serial.print(now.day()); Serial.print(" ");
+  Serial.print(now.hour()); Serial.print(':');
+  Serial.print(now.minute()); Serial.print(':');
+  Serial.println(now.second());
+}
+
+
