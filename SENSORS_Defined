@@ -1,0 +1,156 @@
+#include <Wire.h>
+#include "RTClib.h"
+#include <Stepper.h>
+
+// --- Stepper Motor Setup ---
+const int stepsPerRevolution = 2048;
+const int stepsPer72Deg = stepsPerRevolution / 5;
+
+Stepper stepperForward(stepsPerRevolution, 36, 37, 35, 34);
+Stepper stepperReverse(stepsPerRevolution, 36, 35, 37, 34);
+
+// --- LED Pins ---
+const int redLED = 42;
+const int greenLED = 43;
+
+// --- Ultrasonic Sensor Pins ---
+const int trigPin = 30;
+const int echoPin = 31;
+unsigned long lastUltrasonicCheck = 0;
+const unsigned long ultrasonicInterval = 5000;
+
+// --- Shock Sensor Pin (RQ-S003) ---
+const int shockPin = 32;
+
+// --- Touch Sensor Pin (HW-201) ---
+const int touchPin = 33;
+
+// --- RTC ---
+RTC_DS3231 rtc;
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+
+  // Initialize RTC
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC ");
+    while (1);
+  }
+
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, setting time...");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+
+  // Motor speed
+  stepperForward.setSpeed(10);
+  stepperReverse.setSpeed(10);
+
+  // LED setup
+  pinMode(redLED, OUTPUT);
+  pinMode(greenLED, OUTPUT);
+
+  // Ultrasonic setup
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  // Shock and Touch sensor setup
+  pinMode(shockPin, INPUT);
+  pinMode(touchPin, INPUT);
+}
+
+void loop() {
+  // Run full forward cycle
+  runStepper(stepperForward, "FORWARD");
+
+  // Run full reverse cycle
+  runStepper(stepperReverse, "REVERSE");
+}
+
+void runStepper(Stepper& motor, const char* directionLabel) {
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(redLED, HIGH);
+    motor.step(stepsPer72Deg);
+    digitalWrite(redLED, LOW);
+
+    digitalWrite(greenLED, HIGH);
+
+    DateTime now = rtc.now();
+    Serial.print(directionLabel);
+    Serial.print(" Step "); Serial.print(i + 1);
+    Serial.print(" completed at: ");
+    Serial.print(now.year()); Serial.print('/');
+    Serial.print(now.month()); Serial.print('/');
+    Serial.print(now.day()); Serial.print(" ");
+    Serial.print(now.hour()); Serial.print(":");
+    Serial.print(now.minute()); Serial.print(":");
+    Serial.println(now.second());
+
+    delay(1000);
+    digitalWrite(greenLED, LOW);
+    delay(500);
+
+    // Ultrasonic check
+    if (millis() - lastUltrasonicCheck >= ultrasonicInterval) {
+      takeUltrasonicReading();
+      lastUltrasonicCheck = millis();
+    }
+
+    // Shock and Touch sensor checks
+    checkShockSensor();
+    checkTouchSensor();
+  }
+}
+
+void takeUltrasonicReading() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH);
+  float distance = duration * 0.034 / 2;
+
+  DateTime now = rtc.now();
+  Serial.print("Ultrasonic Reading at ");
+  Serial.print(now.hour()); Serial.print(":");
+  Serial.print(now.minute()); Serial.print(":");
+  Serial.print(now.second()); Serial.print(" -> ");
+  Serial.print(distance);
+  Serial.println(" cm");
+}
+
+void checkShockSensor() {
+  int shockValue = digitalRead(shockPin);
+  DateTime now = rtc.now();
+
+  Serial.print("RQ-S003 Vibration Status at ");
+  Serial.print(now.hour()); Serial.print(":");
+  Serial.print(now.minute()); Serial.print(":");
+  Serial.print(now.second()); Serial.print(" -> ");
+
+  if (shockValue == LOW) {
+    Serial.println("\xF0\x9F\x92\xA5 Vibration Detected!");
+  } else {
+    Serial.println("\xE2\x9C\x85 No Vibration");
+  }
+}
+
+void checkTouchSensor() {
+  int touchState = digitalRead(touchPin);
+  DateTime now = rtc.now();
+
+  Serial.print("HW-201 Touch Status at ");
+  Serial.print(now.hour()); Serial.print(":");
+  Serial.print(now.minute()); Serial.print(":");
+  Serial.print(now.second()); Serial.print(" -> ");
+
+  if (touchState == HIGH) {
+    Serial.println("\xF0\x9F\x96\x90\xEF\xB8\x8F Touched!");
+  } else {
+    Serial.println("\xF0\x9F\x9A\xAB Not touched");
+  }
+}
