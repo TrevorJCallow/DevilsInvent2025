@@ -1,0 +1,159 @@
+#include <Wire.h>
+#include "RTClib.h"
+#include <Servo.h>
+
+// === Servo Setup ===
+Servo myServo;
+const int servoPin = 10;
+int currentAngle = 0; // Start at 0°
+const int angleStep = 30;
+const int stepDelay = 500; // Time between angle movements
+
+// === LED Pins ===
+const int redLED = 42;
+const int greenLED = 43;
+
+// === Sensor Pins ===
+const int pirPin = 22;
+const int trigPin = 3;
+const int echoPin = 2;
+const int flamePin = 53;
+const int vibrationPin = 5;
+
+// === RTC ===
+RTC_DS3231 rtc;
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC 😵");
+    while (true);
+  }
+
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, setting time...");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+
+  myServo.attach(servoPin);
+  myServo.write(currentAngle); // Start at 0°
+
+  pinMode(redLED, OUTPUT);
+  pinMode(greenLED, OUTPUT);
+
+  pinMode(pirPin, INPUT);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(flamePin, INPUT);
+  pinMode(vibrationPin, INPUT);
+}
+
+void loop() {
+  // === Reset servo to 0 degrees at start of each loop ===
+  currentAngle = 0;
+  myServo.write(currentAngle);
+  delay(1000); // Wait for servo to reach 0°
+
+  // 5 steps forward (each 30°)
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(redLED, HIGH);
+    moveServoStep("forward");
+    digitalWrite(redLED, LOW);
+
+    digitalWrite(greenLED, HIGH);
+    delay(500);
+    digitalWrite(greenLED, LOW);
+
+    DateTime now = rtc.now();
+
+    switch (i) {
+      case 0: {
+        int motion = digitalRead(pirPin);
+        Serial.print("FORWARD PIR Reading: ");
+        Serial.print(motion == HIGH ? "Motion Detected" : "No Motion");
+        Serial.print(" (Raw Value: ");
+        Serial.print(motion);
+        Serial.print(") at ");
+        printTimestamp(now);
+        break;
+      }
+      case 1: {
+        float distance = readUltrasonicCM();
+        Serial.print("FORWARD HC-SR04 Distance: ");
+        Serial.print(distance);
+        Serial.print(" cm (Raw Value: ");
+        Serial.print(distance);
+        Serial.print(") at ");
+        printTimestamp(now);
+        break;
+      }
+      case 2: {
+        int flame = digitalRead(flamePin);
+        Serial.print("FORWARD RQ-S003 Flame Reading: ");
+        Serial.print(flame == LOW ? "🔥 Flame Detected" : "No Flame");
+        Serial.print(" (Raw Value: ");
+        Serial.print(flame);
+        Serial.print(") at ");
+        printTimestamp(now);
+        break;
+      }
+      case 3: {
+        int vibration = digitalRead(vibrationPin);
+        Serial.print("FORWARD HW-201 Vibration Reading: ");
+        Serial.print(vibration == HIGH ? "Vibration Detected" : "No Vibration");
+        Serial.print(" (Raw Value: ");
+        Serial.print(vibration);
+        Serial.print(") at ");
+        printTimestamp(now);
+        break;
+      }
+      default:
+        break;
+    }
+
+    delay(500); // Pause before next step
+  }
+
+  delay(2000); // Pause before repeating the full loop
+}
+
+// === Moves servo one 30° step in the specified direction
+void moveServoStep(String direction) {
+  if (direction == "forward") {
+    currentAngle += angleStep;
+    if (currentAngle > 180) currentAngle = 180;
+  } else if (direction == "reverse") {
+    currentAngle -= angleStep;
+    if (currentAngle < 0) currentAngle = 0;
+  }
+
+  myServo.write(currentAngle);
+  delay(stepDelay);
+}
+
+// === Ultrasonic Distance Function
+float readUltrasonicCM() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000);
+  float distance = duration * 0.0343 / 2;
+
+  if (duration == 0) return -1;
+  return distance;
+}
+
+// === Timestamp Printer
+void printTimestamp(DateTime now) {
+  Serial.print(now.year()); Serial.print('/');
+  Serial.print(now.month()); Serial.print('/');
+  Serial.print(now.day()); Serial.print(" ");
+  Serial.print(now.hour()); Serial.print(':');
+  Serial.print(now.minute()); Serial.print(':');
+  Serial.println(now.second());
+}
