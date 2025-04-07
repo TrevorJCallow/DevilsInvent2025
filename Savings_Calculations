@@ -1,0 +1,19 @@
+# Define base metrics for a medium-sized factory operation
+downtime_hours_per_year = 1200
+downtime_cost_per_hour = 10000
+missed_defects_cost = 500000
+qc_labor_cost = 800000
+
+# AURA's improvements
+qc_speed_improvement = 0.38
+defect_reduction = 0.63
+downtime_reduction = 0.32
+
+# Calculate savings
+downtime_savings = downtime_hours_per_year * downtime_cost_per_hour * downtime_reduction
+defect_savings = missed_defects_cost * defect_reduction
+qc_labor_savings = qc_labor_cost * qc_speed_improvement
+
+total_savings = downtime_savings + defect_savings + qc_labor_savings
+
+downtime_savings, defect_savings, qc_labor_savings, total_savings
